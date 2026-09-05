@@ -31,7 +31,7 @@ header{padding:4px 4px 20px}.eyebrow{font-size:12px;font-weight:800;letter-spaci
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px}.section-title{font-weight:800}.secondary{border:1px solid var(--line);border-radius:12px;padding:9px 12px;background:#20232c;color:var(--text);font-weight:750}.danger{color:#ff8d93;background:#2b171b}
 details{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}summary{font-weight:750;color:#dfe1e8;cursor:pointer}
 .addbox{display:flex;gap:8px;margin-top:12px}.addbox input{min-width:0;flex:1;padding:12px;border:1px solid var(--line);background:#0e1016;color:white;border-radius:13px;outline:none}.addbox input:focus{border-color:var(--accent)}
-.decklist{margin:10px 0 0;padding:0;list-style:none;max-height:330px;overflow:auto}.decklist li{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid #242731;font-size:14px;transition:transform .16s ease,opacity .16s ease}.decklist li:last-child{border-bottom:0}.decklist li.dragging{opacity:.45;transform:scale(.98)}.decklist li.drop-target{border-top:2px solid #7c83ff}.done{text-decoration:line-through;color:#656976}.drag-handle{border:1px solid var(--line);background:#20232c;color:#cfd2dc;border-radius:9px;width:34px;height:30px;padding:0;font-weight:800;cursor:grab;touch-action:none;user-select:none}.drag-handle:active{cursor:grabbing}.deck-check{width:19px;height:19px;accent-color:var(--green);flex:none}.remove{margin-left:auto;border:0;background:none;color:#707480;font-size:21px;padding:2px 7px}.deck-actions{margin-left:auto;display:flex;gap:5px;align-items:center}.remove-all{margin-top:12px;width:100%;border:1px solid #4b252a;border-radius:12px;padding:10px;background:#2b171b;color:#ff9ba0;font-weight:800}
+.decklist{margin:10px 0 0;padding:0;list-style:none;max-height:330px;overflow:auto}.decklist li{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid #242731;font-size:14px;transition:transform .16s ease,opacity .16s ease}.decklist li:last-child{border-bottom:0}.decklist li.dragging{opacity:.45;transform:scale(.98)}.decklist li.drop-target{border-top:2px solid #7c83ff}.done{text-decoration:line-through;color:#656976}.drag-handle{border:1px solid var(--line);background:#20232c;color:#cfd2dc;border-radius:9px;width:34px;height:30px;padding:0;font-weight:800;cursor:grab;touch-action:none;user-select:none}.drag-handle:active{cursor:grabbing}.deck-check{width:19px;height:19px;accent-color:var(--green);flex:none}.edit{border:1px solid var(--line);background:#20232c;color:#cfd2dc;border-radius:9px;width:32px;height:30px;padding:0;font-weight:800}.remove{border:0;background:none;color:#707480;font-size:21px;padding:2px 7px}.deck-actions{margin-left:auto;display:flex;gap:5px;align-items:center}.remove-all{margin-top:12px;width:100%;border:1px solid #4b252a;border-radius:12px;padding:10px;background:#2b171b;color:#ff9ba0;font-weight:800}
 .note{text-align:center;color:#727683;font-size:11px;margin-top:13px}
 .pop{animation:pop .42s cubic-bezier(.2,.8,.2,1)}@keyframes pop{0%{opacity:.2;transform:translateY(8px) scale(.98)}100%{opacity:1;transform:none}}
 .flash{animation:flash .55s ease}@keyframes flash{50%{transform:scale(1.025);filter:brightness(1.2)}}
@@ -73,7 +73,7 @@ details{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}summar
 </details>
 <details>
 <summary style="margin-top:14px;font-weight:700">View & reorder decks</summary>
-<div class="small" style="margin-top:8px">Tick/untick decks to mark them completed. Drag the ☰ handle to arrange your decks. Changes sync to your other device.</div>
+<div class="small" style="margin-top:8px">Tick/untick decks to mark them completed. Use ✎ to rename a deck, or drag the ☰ handle to arrange them. Drag near the top/bottom to scroll quickly. Changes sync to your other device.</div>
 <ul id="list" class="decklist"></ul>
 <button id="removeAll" class="remove-all">Remove all decks in this subject</button>
 <details>
@@ -135,40 +135,63 @@ function choose(sub){const available=state.decks[sub].filter(d=>!state.completed
 function ensureToday(sub){const t=todayKey();if(state.date[sub]!==t||!state.today[sub]||state.completed[sub].includes(state.today[sub]))return choose(sub);return state.today[sub];}
 function getStreak(sub){const days=new Set(state.streakDays?.[sub]||[]);let n=0;const d=new Date();d.setHours(12,0,0,0);while(days.has(d.toISOString().slice(0,10))){n++;d.setDate(d.getDate()-1)}return n;}
 let dragState=null;
+let autoScrollFrame=null;
+function stopAutoScroll(){
+  if(autoScrollFrame){cancelAnimationFrame(autoScrollFrame);autoScrollFrame=null;}
+}
+function autoScrollList(list,y){
+  stopAutoScroll();
+  const step=()=>{
+    if(!dragState || dragState.list!==list)return;
+    const r=list.getBoundingClientRect();
+    const edge=65;
+    let dy=0;
+    if(y<r.top+edge) dy=-Math.max(2,Math.min(12,(r.top+edge-y)/5));
+    else if(y>r.bottom-edge) dy=Math.max(2,Math.min(12,(y-(r.bottom-edge))/5));
+    if(dy!==0){list.scrollTop+=dy;autoScrollFrame=requestAnimationFrame(step);}
+  };
+  autoScrollFrame=requestAnimationFrame(step);
+}
 function setupDrag(handle,li){
   handle.addEventListener("pointerdown",e=>{
     if(e.pointerType==="mouse" && e.button!==0)return;
     const list=li.parentElement;
-    dragState={li,list,startIndex:Number(li.dataset.index),lastIndex:Number(li.dataset.index),pointerId:e.pointerId};
+    dragState={li,list,startIndex:Number(li.dataset.index),lastIndex:Number(li.dataset.index),pointerId:e.pointerId,y:e.clientY};
     li.classList.add("dragging");
     handle.setPointerCapture?.(e.pointerId);
     e.preventDefault();
   });
   handle.addEventListener("pointermove",e=>{
     if(!dragState || dragState.li!==li)return;
-    const items=[...dragState.list.children].filter(x=>x!==li);
+    dragState.y=e.clientY;
+    const list=dragState.list;
+    autoScrollList(list,e.clientY);
+    const items=[...list.children].filter(x=>x!==li);
     let targetIndex=items.length;
-    for(let j=0;j<items.length;j++){const r=items[j].getBoundingClientRect();if(e.clientY<r.top+r.height/2){targetIndex=j;break;}}
-    const currentIndex=[...dragState.list.children].indexOf(li);
-    if(targetIndex!==currentIndex){
-      const ref=items[targetIndex];
-      if(ref)dragState.list.insertBefore(li,ref);else dragState.list.appendChild(li);
+    for(let j=0;j<items.length;j++){
+      const r=items[j].getBoundingClientRect();
+      if(e.clientY<r.top+r.height/2){targetIndex=j;break;}
     }
-    [...dragState.list.children].forEach((el,j)=>el.classList.toggle("drop-target",j===targetIndex && el!==li));
+    const ref=items[targetIndex];
+    if(ref)list.insertBefore(li,ref);else list.appendChild(li);
+    [...list.children].forEach((el,j)=>el.classList.toggle("drop-target",j===targetIndex && el!==li));
   });
   const finish=async()=>{
     if(!dragState || dragState.li!==li)return;
-    const order=[...dragState.list.children].map(el=>el.querySelector("span")?.textContent||"");
+    stopAutoScroll();
+    const order=[...dragState.list.children].map(el=>el.dataset.deckName||"");
     const old=state.decks[subject].slice();
-    if(order.length===old.length && order.every((v,j)=>v===old[j])){[...dragState.list.children].forEach(el=>el.classList.remove("drop-target"));li.classList.remove("dragging");dragState=null;return;}
+    [...dragState.list.children].forEach(el=>{el.classList.remove("drop-target");el.classList.remove("dragging");});
+    dragState=null;
+    if(order.length===old.length && order.every((v,j)=>v===old[j]))return;
     state.decks[subject]=order;
     saveLocal();
-    dragState=null;
     render();
     await syncNow();
   };
   handle.addEventListener("pointerup",finish);
   handle.addEventListener("pointercancel",finish);
+  handle.addEventListener("lostpointercapture",finish);
 }
 function renderTabs(){
   const tabs=document.querySelector("#tabs"); tabs.innerHTML="";
@@ -185,13 +208,25 @@ function render(){
   document.querySelector("#streak").textContent=getStreak(subject);document.querySelector("#percent").textContent=pct+"%";document.querySelector("#fill").style.width=pct+"%";document.querySelector("#today").textContent=deck||"🎉 All decks completed!";document.querySelector("#today").classList.remove("pop");void document.querySelector("#today").offsetWidth;document.querySelector("#today").classList.add("pop");document.querySelector("#remaining").textContent=remaining;document.querySelector("#completed").textContent=completed;document.querySelector("#date").textContent=new Date().toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"});document.querySelector("#complete").disabled=!deck;document.querySelector("#complete").style.opacity=deck?1:.5;
   const list=document.querySelector("#list");list.innerHTML="";
   state.decks[subject].forEach((d,i)=>{
-    const li=document.createElement("li");li.dataset.index=i;
+    const li=document.createElement("li");li.dataset.index=i;li.dataset.deckName=d;
     const check=document.createElement("input");check.type="checkbox";check.className="deck-check";check.checked=state.completed[subject].includes(d);check.title="Mark completed";check.setAttribute("aria-label","Mark deck completed");check.onchange=async()=>{toggleComplete(i);await syncNow();};
     const handle=document.createElement("button");handle.className="drag-handle";handle.textContent="☰";handle.title="Drag to reorder";handle.setAttribute("aria-label","Drag to reorder");
     const span=document.createElement("span");span.textContent=d;if(check.checked)span.className="done";
     const actions=document.createElement("div");actions.className="deck-actions";
+    const edit=document.createElement("button");edit.className="edit";edit.textContent="✎";edit.title="Edit deck name";edit.setAttribute("aria-label","Edit deck name");edit.onclick=async()=>{
+      const next=prompt("Edit deck name:",d);
+      if(next===null)return;
+      const name=next.trim();
+      if(!name || name===d)return;
+      if(state.decks[subject].includes(name)){alert("A deck with that name already exists.");return;}
+      state.decks[subject][i]=name;
+      state.completed[subject]=state.completed[subject].map(v=>v===d?name:v);
+      if(state.today[subject]===d)state.today[subject]=name;
+      li.dataset.deckName=name;
+      saveLocal();render();await syncNow();
+    };
     const x=document.createElement("button");x.className="remove";x.textContent="×";x.title="Remove deck";x.onclick=async()=>{if(confirm("Remove this deck?")){state.decks[subject].splice(i,1);state.completed[subject]=state.completed[subject].filter(v=>v!==d);if(state.today[subject]===d)state.today[subject]=null;saveLocal();render();await syncNow();}};
-    actions.append(x);li.append(check,handle,span,actions);list.appendChild(li);setupDrag(handle,li);
+    actions.append(edit,x);li.append(check,handle,span,actions);list.appendChild(li);setupDrag(handle,li);
   });
 }
 function toggleComplete(i){const d=state.decks[subject][i],arr=state.completed[subject],pos=arr.indexOf(d);if(pos>=0){arr.splice(pos,1);}else{arr.push(d);if(!state.streakDays[subject].includes(todayKey()))state.streakDays[subject].push(todayKey());}saveLocal();render();}
