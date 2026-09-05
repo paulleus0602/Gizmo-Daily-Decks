@@ -31,7 +31,7 @@ header{padding:4px 4px 20px}.eyebrow{font-size:12px;font-weight:800;letter-spaci
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px}.section-title{font-weight:800}.secondary{border:1px solid var(--line);border-radius:12px;padding:9px 12px;background:#20232c;color:var(--text);font-weight:750}.danger{color:#ff8d93;background:#2b171b}
 details{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}summary{font-weight:750;color:#dfe1e8;cursor:pointer}
 .addbox{display:flex;gap:8px;margin-top:12px}.addbox input{min-width:0;flex:1;padding:12px;border:1px solid var(--line);background:#0e1016;color:white;border-radius:13px;outline:none}.addbox input:focus{border-color:var(--accent)}
-.decklist{margin:10px 0 0;padding:0;list-style:none;max-height:330px;overflow:auto}.decklist li{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid #242731;font-size:14px;transition:transform .16s ease,opacity .16s ease}.decklist li:last-child{border-bottom:0}.decklist li.dragging{opacity:.45;transform:scale(.98)}.decklist li.drop-target{border-top:2px solid #7c83ff}.done{text-decoration:line-through;color:#656976}.drag-handle{border:1px solid var(--line);background:#20232c;color:#cfd2dc;border-radius:9px;width:34px;height:30px;padding:0;font-weight:800;cursor:grab;touch-action:none;user-select:none}.drag-handle:active{cursor:grabbing}.deck-check{width:19px;height:19px;accent-color:var(--green);flex:none}.edit{border:1px solid var(--line);background:#20232c;color:#cfd2dc;border-radius:9px;width:32px;height:30px;padding:0;font-weight:800}.remove{border:0;background:none;color:#707480;font-size:21px;padding:2px 7px}.deck-actions{margin-left:auto;display:flex;gap:5px;align-items:center}.remove-all{margin-top:12px;width:100%;border:1px solid #4b252a;border-radius:12px;padding:10px;background:#2b171b;color:#ff9ba0;font-weight:800}
+.decklist{margin:10px 0 0;padding:0;list-style:none;max-height:330px;overflow:auto}.decklist li{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid #242731;font-size:14px;transition:transform .16s ease,opacity .16s ease}.decklist li:last-child{border-bottom:0}.decklist li.dragging{opacity:.45;transform:scale(.98)}.decklist li.drop-target{border-top:2px solid #7c83ff}.done{text-decoration:line-through;color:#656976}.drag-handle{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;border:1px solid var(--line);background:#20232c;color:#cfd2dc;border-radius:9px;width:34px;height:30px;padding:0;font-weight:800;cursor:grab;touch-action:none;user-select:none;cursor:grab}.drag-handle:active{cursor:grabbing}.deck-check{width:19px;height:19px;accent-color:var(--green);flex:none}.edit{border:1px solid var(--line);background:#20232c;color:#cfd2dc;border-radius:9px;width:32px;height:30px;padding:0;font-weight:800}.remove{border:0;background:none;color:#707480;font-size:21px;padding:2px 7px}.deck-actions{margin-left:auto;display:flex;gap:5px;align-items:center}.remove-all{margin-top:12px;width:100%;border:1px solid #4b252a;border-radius:12px;padding:10px;background:#2b171b;color:#ff9ba0;font-weight:800}
 .note{text-align:center;color:#727683;font-size:11px;margin-top:13px}
 .pop{animation:pop .42s cubic-bezier(.2,.8,.2,1)}@keyframes pop{0%{opacity:.2;transform:translateY(8px) scale(.98)}100%{opacity:1;transform:none}}
 .flash{animation:flash .55s ease}@keyframes flash{50%{transform:scale(1.025);filter:brightness(1.2)}}
@@ -153,45 +153,108 @@ function autoScrollList(list,y){
   autoScrollFrame=requestAnimationFrame(step);
 }
 function setupDrag(handle,li){
-  handle.addEventListener("pointerdown",e=>{
-    if(e.pointerType==="mouse" && e.button!==0)return;
-    const list=li.parentElement;
-    dragState={li,list,startIndex:Number(li.dataset.index),lastIndex:Number(li.dataset.index),pointerId:e.pointerId,y:e.clientY};
-    li.classList.add("dragging");
-    handle.setPointerCapture?.(e.pointerId);
-    e.preventDefault();
-  });
-  handle.addEventListener("pointermove",e=>{
-    if(!dragState || dragState.li!==li)return;
-    dragState.y=e.clientY;
-    const list=dragState.list;
-    autoScrollList(list,e.clientY);
+  let active=false;
+  let list=null;
+  let touchMode=false;
+
+  function move(y){
+    if(!active || !list)return;
+    dragState.y=y;
+    autoScrollList(list,y);
+
     const items=[...list.children].filter(x=>x!==li);
     let targetIndex=items.length;
     for(let j=0;j<items.length;j++){
       const r=items[j].getBoundingClientRect();
-      if(e.clientY<r.top+r.height/2){targetIndex=j;break;}
+      if(y<r.top+r.height/2){targetIndex=j;break;}
     }
     const ref=items[targetIndex];
-    if(ref)list.insertBefore(li,ref);else list.appendChild(li);
-    [...list.children].forEach((el,j)=>el.classList.toggle("drop-target",j===targetIndex && el!==li));
-  });
-  const finish=async()=>{
-    if(!dragState || dragState.li!==li)return;
+    if(ref) list.insertBefore(li,ref);
+    else list.appendChild(li);
+
+    [...list.children].forEach((el,j)=>
+      el.classList.toggle("drop-target",j===targetIndex && el!==li)
+    );
+  }
+
+  async function finish(){
+    if(!active)return;
     stopAutoScroll();
-    const order=[...dragState.list.children].map(el=>el.dataset.deckName||"");
+    const currentList=list;
+    const order=[...currentList.children].map(el=>el.dataset.deckName||"");
     const old=state.decks[subject].slice();
-    [...dragState.list.children].forEach(el=>{el.classList.remove("drop-target");el.classList.remove("dragging");});
+
+    [...currentList.children].forEach(el=>{
+      el.classList.remove("drop-target");
+      el.classList.remove("dragging");
+    });
+
+    active=false;
+    list=null;
+    touchMode=false;
     dragState=null;
+
     if(order.length===old.length && order.every((v,j)=>v===old[j]))return;
+
     state.decks[subject]=order;
     saveLocal();
     render();
     await syncNow();
-  };
-  handle.addEventListener("pointerup",finish);
-  handle.addEventListener("pointercancel",finish);
-  handle.addEventListener("lostpointercapture",finish);
+  }
+
+  // Touch dragging for iPhone/iPad. This avoids relying on pointer capture,
+  // which can be unreliable on mobile Safari.
+  handle.addEventListener("touchstart",e=>{
+    if(e.touches.length!==1)return;
+    const t=e.touches[0];
+    list=li.parentElement;
+    active=true;
+    touchMode=true;
+    dragState={li,list,startIndex:Number(li.dataset.index),lastIndex:Number(li.dataset.index),
+      pointerId:null,y:t.clientY};
+    li.classList.add("dragging");
+    e.preventDefault();
+  },{passive:false});
+
+  handle.addEventListener("touchmove",e=>{
+    if(!active || !touchMode || e.touches.length!==1)return;
+    e.preventDefault();
+    move(e.touches[0].clientY);
+  },{passive:false});
+
+  handle.addEventListener("touchend",e=>{
+    if(touchMode){e.preventDefault();finish();}
+  },{passive:false});
+
+  handle.addEventListener("touchcancel",()=>{
+    if(touchMode)finish();
+  });
+
+  // Mouse/desktop dragging.
+  handle.addEventListener("pointerdown",e=>{
+    if(e.pointerType==="touch")return;
+    if(e.pointerType==="mouse" && e.button!==0)return;
+    list=li.parentElement;
+    active=true;
+    touchMode=false;
+    dragState={li,list,startIndex:Number(li.dataset.index),lastIndex:Number(li.dataset.index),
+      pointerId:e.pointerId,y:e.clientY};
+    li.classList.add("dragging");
+    try{handle.setPointerCapture(e.pointerId);}catch(_){}
+    e.preventDefault();
+  });
+
+  handle.addEventListener("pointermove",e=>{
+    if(!active || touchMode)return;
+    move(e.clientY);
+  });
+
+  handle.addEventListener("pointerup",()=>{
+    if(!touchMode)finish();
+  });
+  handle.addEventListener("pointercancel",()=>{
+    if(!touchMode)finish();
+  });
 }
 function renderTabs(){
   const tabs=document.querySelector("#tabs"); tabs.innerHTML="";
